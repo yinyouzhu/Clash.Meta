@@ -33,7 +33,22 @@ var structSize = func() int {
 	}
 }()
 
+// findProcessName answers with the sysctl socket table first, which is cheap
+// and covers the calling process, then falls back to walking every process's
+// descriptors: on current macOS the sysctl hides other processes' sockets, so
+// the first table alone would never name the app a proxy is carrying.
 func findProcessName(network string, ip netip.Addr, port int) (uint32, string, error) {
+	uid, path, err := findProcessNameSysctl(network, ip, port)
+	if err == nil {
+		return uid, path, nil
+	}
+	if uid, scanned, scanErr := findProcessNameByScan(network, ip, port); scanErr == nil {
+		return uid, scanned, nil
+	}
+	return 0, "", err
+}
+
+func findProcessNameSysctl(network string, ip netip.Addr, port int) (uint32, string, error) {
 	var spath string
 	switch network {
 	case TCP:
